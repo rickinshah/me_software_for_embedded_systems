@@ -1,0 +1,34 @@
+@startuml
+title Printer Sequence Diagram
+
+actor User
+participant "Computer / Mobile" as Device
+participant "Printer Controller" as Controller
+participant "Print Queue" as Queue
+participant "Printer Engine" as Engine
+participant "Sensors" as Sensors
+participant "Paper Tray" as Tray
+participant "Ink Cartridge" as Ink
+
+User -> Device : Click Print
+Device -> Controller : Send Print Job
+Controller -> Queue : Add Job to Queue
+Queue -> Controller : Job Ready
+
+Controller -> Sensors : Check Printer Status
+Sensors --> Controller : Status OK
+
+Controller -> Tray : Check Paper
+Tray --> Controller : Paper Available
+
+Controller -> Ink : Check Ink Level
+Ink --> Controller : Ink Sufficient
+
+Controller -> Engine : Start Printing
+Engine --> Controller : Printing in Progress
+
+Engine -> Controller : Job Complete
+Controller -> Device : Send Completion Status
+Device -> User : Printing Finished
+
+@enduml

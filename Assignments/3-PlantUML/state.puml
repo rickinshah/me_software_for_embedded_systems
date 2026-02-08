@@ -1,0 +1,25 @@
+@startuml
+title Printer State Diagram
+
+[*] --> Idle
+
+Idle --> Receiving_Data : Print Command Sent
+Receiving_Data --> Processing : Data Received
+Processing --> Printing : Printer Ready
+
+Printing --> Completed : Job Finished
+Completed --> Idle : Return to Standby
+
+' Pause / Resume
+Printing --> Paused : Pause Command
+Paused --> Printing : Resume Command
+
+' Error Handling (can occur from almost any state)
+Idle --> Error : Hardware Failure
+Receiving_Data --> Error : Connection Lost
+Processing --> Error : Data Corrupted
+Printing --> Error : Paper Jam / Out of Ink
+
+Error --> Idle : Reset / Issue Resolved
+
+@enduml

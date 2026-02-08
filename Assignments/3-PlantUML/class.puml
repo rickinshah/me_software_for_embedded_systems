@@ -1,0 +1,85 @@
+@startuml
+title Printer Class Diagram
+
+enum PrinterStatus {
+    Idle
+    Printing
+    Error
+    Offline
+}
+
+interface Printable {
+    +print()
+}
+
+class Printer {
+    -status : PrinterStatus
+    -model : String
+    +startPrint(job : PrintJob)
+    +cancelPrint()
+    +getStatus() : PrinterStatus
+}
+
+class PrintJob {
+    -jobId : int
+    -pages : int
+    +prepare()
+    +spool()
+}
+
+class PrinterController {
+    +processJob(job : PrintJob)
+    +manageQueue()
+}
+
+class PaperTray {
+    -capacity : int
+    -currentLevel : int
+    +isEmpty() : boolean
+}
+
+class InkCartridge {
+    -inkLevel : int
+    +isLow() : boolean
+}
+
+abstract class Sensor {
+    -type : String
+    +detectIssue() : boolean
+}
+
+class PaperSensor
+class InkSensor
+class TemperatureSensor
+
+class User {
+    -name : String
+    +sendPrint(job : PrintJob)
+}
+
+'================ RELATIONSHIPS =================
+
+User "1" --> "*" PrintJob : creates
+PrintJob "*" --> "1" User : owner
+
+PrinterController "1" --> "*" PrintJob : manages
+Printer --> PrintJob : prints
+
+Printer *-- PrinterController
+Printer *-- PaperTray
+Printer *-- InkCartridge
+
+' Aggregation (replaceable parts)
+Printer o-- Sensor
+
+' Inheritance
+Sensor <|-- PaperSensor
+Sensor <|-- InkSensor
+Sensor <|-- TemperatureSensor
+
+' Interface implementation
+PrintJob ..|> Printable
+
+Printer --> PrinterStatus
+
+@enduml
