@@ -5,16 +5,11 @@ ITEMS = 100
 
 buffer = [None] * BUFFER_SIZE
 
-write_buf = 0
-read_buf = 0
-
 full = threading.Semaphore(0)
 empty = threading.Semaphore(BUFFER_SIZE)
 
-
 def producer():
-    global write_buf
-
+    write_buf = 0
     item_id = 0
 
     while item_id < ITEMS:
@@ -26,8 +21,7 @@ def producer():
         full.release()
 
 def consumer():
-    global read_buf
-
+    read_buf = 0
     consumed = 0
 
     while consumed < ITEMS:

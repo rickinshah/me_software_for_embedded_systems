@@ -1,18 +1,66 @@
 #set page(
-  paper: "a4"
+  paper: "a4",
+  margin: (x: 2.2cm, y: 2cm),
 )
-#set par(justify: true)
-#set heading(numbering: "1.")
+
+#set par(
+  justify: true,
+  leading: 0.6em,   // improves readability
+)
+
+#set text(
+  font: "Libertinus Serif", // fantastic academic font
+  size: 11pt,
+)
+
+#set heading(
+  numbering: "1.",
+)
+
+#show heading.where(level: 1): set text(15pt, weight: "bold")
+#show heading.where(level: 2): set text(13pt, weight: "semibold")
+
+#show raw: set text(
+// font: "JetBrainsMono Nerd Font",
+size: 9pt,
+)
+
 #show title: set align(center)
 
-#let note(body) = block(
+#let callout(title, color, body) = block(
   inset: 12pt,
-  fill: luma(240),
   radius: 6pt,
-  stroke: gray,
+  stroke: color,
+  fill: color.lighten(88%),
 )[
-  #strong[Note:] #body
+  #strong[#title:] #linebreak() #body
 ]
+
+#let note(body) = callout("Note", gray, body)
+
+#let homework(body) = callout(
+  "Homework",
+  rgb(220, 80, 70),
+  body
+)
+
+#let important(body) = callout(
+  "Important",
+  rgb(200, 140, 20),
+  body
+)
+
+#let example(body) = callout(
+  "Example",
+  rgb(60, 120, 200),
+  body
+)
+
+#let defn(body) = callout(
+  "Definition",
+  blue,
+  body
+)
 
 #title[Software for Embedded Systems]
 #outline()
@@ -42,10 +90,8 @@
 #strong[Embedded Systems] - reactive in nature.
 
 #note[
-  #linebreak()
-  Jitter - uncertain
-  #linebreak()
-  Delay - certain
+  - Jitter - uncertain
+  - Delay - certain
 ]
 
 == Tasks
@@ -63,7 +109,9 @@
 - *Stack/Heap*
 - *TCB creation*
 
-#strong[Persistence:] Duration between when task enters to termination.
+#defn[
+  *Persistence:* Duration between when task enters to termination.
+]
 
 === Thread
 - Lightweight process
@@ -243,7 +291,6 @@ typedef struct {
 - `empty(n-1)`
 - `full(0)`
 
-
 #figure(
   image("assets/2026-02-04-13-54-57.png", width: 50%),
 caption: [Consumer & Producer],
@@ -254,5 +301,30 @@ caption: [Consumer & Producer],
   caption: [Semaphores],
 ) <fig-2026-02-04-13-55-48>
 
+#defn[
+  *Uncontended* descibes cases where a thread doesn't have any competition to acquire a lock.
+  *Contended* describes a or lock that different threads are trying to acquire at the same time.
+]
+
+#homework[
+- What is `futexes`?
+  - `Fast User Space Mutex`
+  - Uncontended -> User space - manages lock.
+  - Contended -> Kernel space - manages sleeping and waking threads.
+  - 0 - uncontended, 1 - available, -1(or any negative) - contended
+  - `FUTEX_WAIT` & `FUTEX_WAKE`
+  - #link("https://linux.die.net/man/7/futex")[Man Page]
+]
 
 = Bounded Buffer Problem
+
+- Multiple Readers can read simultaneously.
+- Only one Writer can write.
+
+
+#figure(
+  image("assets/2026-02-09-11-45-43.png", width: 80%),
+caption: [Reader Writer Problem],
+) <fig-2026-02-09-11-45-43>
+
+- Cannot use `mutex` cause the reader which locks `wrtSem` may not be the same reader which unlocks `wrtSem` so we have to use `BinarySemaphore`.
