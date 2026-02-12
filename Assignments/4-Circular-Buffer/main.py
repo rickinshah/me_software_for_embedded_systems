@@ -1,35 +1,45 @@
 import threading
+import time
+import random
 
 BUFFER_SIZE = 5
-ITEMS = 100
+ITEMS = 20
 
 buffer = [None] * BUFFER_SIZE
 
-full = threading.Semaphore(0)
-empty = threading.Semaphore(BUFFER_SIZE)
+head = 0
+tail = 0
+count = 0
+
+lock = threading.Lock()
 
 def producer():
-    write_buf = 0
+    global head, count
     item_id = 0
 
+
     while item_id < ITEMS:
-        empty.acquire()
-        print(f"Producer writing to {write_buf}")
-        buffer[write_buf] = f"item-{item_id}"
-        write_buf = (write_buf + 1) % BUFFER_SIZE
-        item_id += 1
-        full.release()
+        with lock:
+            if count < BUFFER_SIZE:
+                print(f"Producer writing to {head}")
+                buffer[head] = f"item-{item_id}"
+                head = (head + 1) % BUFFER_SIZE
+                item_id += 1
+                count += 1
+        time.sleep(random.uniform(0.1, 0.6))
 
 def consumer():
-    read_buf = 0
+    global tail, count
     consumed = 0
 
     while consumed < ITEMS:
-        full.acquire()
-        print(f"    consumed: {buffer[read_buf]}")
-        read_buf = (read_buf + 1) % BUFFER_SIZE
-        consumed += 1
-        empty.release()
+        with lock:
+            if count > 0:
+                print(f"    consumed: {buffer[tail]}")
+                tail = (tail + 1) % BUFFER_SIZE
+                consumed += 1
+                count -= 1
+        time.sleep(random.uniform(0.1, 0.6))
 
 
 producer_thread = threading.Thread(target=producer)
