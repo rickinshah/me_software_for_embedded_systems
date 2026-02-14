@@ -328,3 +328,13 @@ caption: [Reader Writer Problem],
 ) <fig-2026-02-09-11-45-43>
 
 - Cannot use `mutex` cause the reader which locks `wrtSem` may not be the same reader which unlocks `wrtSem` so we have to use `BinarySemaphore`.
+
+= Monitors
+
+- Encapsulating the critical resource.
+- Provides control by allowing only one process to access a critical resource at a time.
+- Built-in mutual exclusion, no manual `wait()` and `signal()` required.
+- `put()` and `get()` are the two procedures available.
+
+
+UEFI can have 128+ partition and bIOS max 4
