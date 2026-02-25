@@ -336,5 +336,134 @@ caption: [Reader Writer Problem],
 - Built-in mutual exclusion, no manual `wait()` and `signal()` required.
 - `put()` and `get()` are the two procedures available.
 
+= Operating System
 
-UEFI can have 128+ partition and bIOS max 4
+== Boot Loader
+
+- UEFI can have 128+ partition and BIOS can have max 4 partition.
+- Reset address for x86 - 0xFFFF followed by 0s.
+- First part of BootLoader is immutable. So when BIOS update is there, it doesn't update the first part.
+- Second stage - GPIO and Pin MUX and maybe peripherals
+- Initramfs [Init Ram File System] - Temp(Dummy) file system before the actual file system is mounted.
+- Third Stage - vmlinux, initramfs.img
+
+- MBR(master boot record) - Sector 0
+- VBR(variable boot record)
+
+BIOS
+- Sector 0 (512 Bytes)
+  - 0 - 455 -> Boot Loader Program
+  - 446 - 509 -> Partition allowed (4 paritions)
+  - 510 - 512 -> 0x55AA
+- no Secure Boot and security mechanisms
+- Slower
+- cant exceed 2Tb - Logical Block Address that was allowed that is 32 bits. so 2^32 allowed. Block size was limited 512 bytes.
+- Text-based Interface
+
+UEFI
+- upto 64 bits. block size upto 4kb. -> 2^64 x 4kb.
+- GPT (Graphic Partition Table)
+- supports Secure Boot and sinature verification
+- Faster
+- Graphical Interface
+
+
+== Secure Boot
+- Every part of boot image is going to be having a digital signature.
+- Binary image -> Hash -> Sign with Private Key.
+  - Platform Key (pk)
+  - Key exchange Key (kek)
+  - Signature DB (db)
+- db-x is a set of invalid signature.
+- db is set of valid signature.
+- UEFI(inside NVRAM - non-corruptable)
+  - Will have crypto engine to verify.
+  - Enables CPU, RAM and interconnect buses(PCIe).
+  - Checks if Secure Boot or not.
+  - UEFI loads EFI(Extended Firmware Interface) System Partition -> EFI/ubuntu/shimx64.efi
+  - Checks the digital signature then loads the .efi.
+  - shim verifies grub.
+- UEFI
+  - SHIM
+    - GRUB
+      - vmlinux and initramfs
+        - Each stage checks verifies digital singature.
+- When kernel loads modules it will check the digital sinature against Signature DB (db).
+- Boot ROM in SoC(Embedded Systems) instead of UEFI.
+
+- Boot ROM
+  - RoT
+    - SPL
+      - UBoot
+        - Kernel loaded
+
+
+Only UEFI and Boot ROM is executed and everything else is loaded then checked against digital sinatures and then allowed to executed.
+
+- First user space program that is loaded is *Init()* i.e., *PID 1*.
+
+- Public Key is derived from the private key.
+
+message -> hash -> signed with private key -> verify with public key
+
+== Init
+- Generally runs at level 3 - without graphics, with network, multi user
+- Newer Systemd, earlier System V Init
+- Single user is used for recovery.
+
+- 0 -halt
+- 1 - single user
+- 2 - multi user
+- 3 - network, multi user
+- Level 5 - Graphical
+- Level 6 - Reboot
+
+- SysV sequential
+- systemd parallely starts services.
+
+== Inodes
+
+- ext4 as example - Linux
+- Inodes - Data structure used by linux file system to store the metadata of the file.
+- File type, file size, owner, group id, user id, permissions, timestamp
+- Timestamps - A time - creation, m time -modified, c time - change in metadata
+- Link Count
+- file < 4096 kb ? or kB? it will be in 1 block.
+- ext -> extent data -> logical block address to upto where file is oing to be stored.
+- can have multiple extent entry
+- Entry
+  - Length
+  - Start
+  - How many block?
+- Extent tree
+
+- MBR - 512 x 8
+
+- rm -> mark inode as empty, data is already there in data blocks. physical blocks don't get lost.
+- access data - `testdisk`
+- in windows, it doesnt even delete, it just changes the first name to `$`. we can get back the file.
+- Smallest file still takes 4kB in linux.
+
+#homework[
+  use `testdisk` and recover a file
+]
+
+== Linux File System
+
+- `initfs` make use of `/bin`
+
+= Data - Features
+
+- Data -> Information -> Knowledge
+
+== Big Data
+- High frequency
+- large amount of data
+- format the data comes in
+
+== Data Engineering
+
+- Get data and format into particular format
+- *Kalman Filtering*
+
+
