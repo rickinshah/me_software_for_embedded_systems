@@ -1,0 +1,63 @@
+# Base style (Google is a popular base for readability)
+BasedOnStyle: Google
+
+# Indentation settings
+IndentWidth: 4                  # Set indent width to 4 spaces
+TabWidth: 4                      # Set tab width to 4 spaces
+UseTab: Never                    # Use spaces instead of tabs
+
+# Braces
+BreakBeforeBraces: Attach        # Break braces on a new line (Allman style)
+AllowShortIfStatementsOnASingleLine: false
+
+# Column width
+ColumnLimit: 100                 # Maximum column width for wrapping
+
+# Pointer and Reference alignment
+PointerAlignment: Left           # Align pointers to the left (e.g., int* ptr)
+DerivePointerAlignment: false
+
+# Namespace settings
+NamespaceIndentation: All        # Indent all namespaces
+IndentCaseLabels: true           # Indent case labels
+
+# Includes
+IncludeBlocks: Preserve          # Keep include blocks as they are
+IncludeCategories:               # Organize includes by category
+  - Regex: '^<.*\.h>'            # Standard library includes first
+    Priority: 1
+  - Regex: '^<.*>'               # System headers second
+    Priority: 2
+  - Regex: '^".*"'               # Project headers last
+    Priority: 3
+SortIncludes: true               # Sort includes within each category
+
+# Empty lines
+KeepEmptyLinesAtTheStartOfBlocks: false
+MaxEmptyLinesToKeep: 2           # Maximum number of consecutive empty lines to keep
+
+# C++11/14/17 settings
+AllowShortFunctionsOnASingleLine: Inline
+SpaceAfterCStyleCast: true       # Adds a space after a C-style cast
+SpacesInAngles: false            # No spaces within template angle brackets
+SpacesInContainerLiterals: false # No spaces in container literals like {1,2}
+
+# Function declarations/definitions
+AlwaysBreakAfterReturnType: None # Keep return types on the same line
+SpacesBeforeTrailingComments: 2  # Minimum spaces before trailing comments
+
+# Alignments
+AlignConsecutiveAssignments: true   # Align assignments visually
+AlignConsecutiveDeclarations: true  # Align declarations visually
+AlignEscapedNewlines: Left
+AlignTrailingComments: true
+AlignConsecutiveMacros: true
+
+# Others
+BreakConstructorInitializers: AfterColon # Break constructor initializers after the colon
+SpaceBeforeCpp11BracedList: false        # No space before C++11 initializer braces
+Cpp11BracedListStyle: true               # Format braced lists according to C++11 rules
+AllowShortBlocksOnASingleLine: false
+
+# Reflow comments to fit ColumnLimit width
+ReflowComments: true
