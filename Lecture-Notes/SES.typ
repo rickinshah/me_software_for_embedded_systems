@@ -466,4 +466,34 @@ message -> hash -> signed with private key -> verify with public key
 - Get data and format into particular format
 - *Kalman Filtering*
 
+- The baker's 
 
+== Deciles vs Quartiles
+- Mean and Median is not helpful for outliers
+- So we find the quartiles or deciles
+
+= AI vs ML vs DL vs GenAI
+
+- When we provide Set of rules then it is called AI
+- When the system is going to learn the rules by itself then it is ML. We don't define rules.
+- ML with neural networks is DL
+- DL - CNN, RNN, Transformation
+- Transformation -> GenAI
+- Generate complete schedule/a series of values like timestamp + lux instead of single value
+- GenAI with human understandable language -> LLM
+
+
+== On the fly vs Batch
+- On the fly -> Reinforcement Learning
+
+== Type of Learning
+- Instance - only consider current instance/ lazy learning. e.g. KNN
+
+
+== Standard Scalar
+
+- (x - mean) / std
+
+- Mostly used Target encoding - average price for a item (may overfit your data)
+
+- Label Encoding should mostly used when data is randomized
