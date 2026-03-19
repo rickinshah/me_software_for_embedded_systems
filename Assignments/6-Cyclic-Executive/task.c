@@ -7,18 +7,24 @@
 #define TASKS_IN_PRIORITY 5
 #define SPORADIC_PRIORITY 4
 
-volatile uint8_t sporadic = 0;
+volatile uint8_t sporadic         = 0;
+uint8_t          sporadic_pending = 0;
+uint8_t          total_sporadic   = 0;
 
 void scheduler() {
     uint8_t index = 0;
     while (1) {
         for (uint8_t curr_priority = 0; curr_priority < TOTAL_PRIORITY; curr_priority++) {
-            if (curr_priority == SPORADIC_PRIORITY && sporadic != 0) {
-                for (uint8_t i = 0; i < sporadic; i++) {
-                    task(curr_priority, i, 1);
+            if (curr_priority == SPORADIC_PRIORITY) {
+                sporadic_pending = sporadic;
+                sporadic         = 0;
+            }
+            if (curr_priority == SPORADIC_PRIORITY && sporadic_pending != 0) {
+                for (uint8_t i = 0; i < sporadic_pending; i++) {
+                    task(curr_priority, total_sporadic++, 1);
                     delay_ms(100);
                 }
-                sporadic = 0;
+                sporadic_pending = 0;
             }
             for (uint8_t curr_task = 0; curr_task < TASKS_IN_PRIORITY; curr_task++) {
                 task(curr_priority, index, 0);
