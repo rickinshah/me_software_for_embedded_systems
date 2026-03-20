@@ -3,13 +3,18 @@
 #include "delay.h"
 #include "uart.h"
 
-#define TOTAL_PRIORITY    10
-#define TASKS_IN_PRIORITY 5
-#define SPORADIC_PRIORITY 4
+#define TOTAL_PRIORITY        10
+#define TASKS_IN_PRIORITY     5
+#define SPORADIC_PRIORITY     4
+#define SPORADIC_PRIORITY_PA1 7
+#define SPORADIC_PRIORITY_PA4 9
 
-volatile uint8_t sporadic         = 0;
-uint8_t          sporadic_pending = 0;
-uint8_t          total_sporadic   = 0;
+volatile uint8_t sporadic             = 0;
+volatile uint8_t sporadic_pa1         = 0;
+volatile uint8_t sporadic_pa4         = 0;
+uint8_t          sporadic_pending     = 0;
+uint8_t          sporadic_pending_pa1 = 0;
+uint8_t          sporadic_pending_pa4 = 0;
 
 void scheduler() {
     uint8_t index = 0;
@@ -18,13 +23,33 @@ void scheduler() {
             if (curr_priority == SPORADIC_PRIORITY) {
                 sporadic_pending = sporadic;
                 sporadic         = 0;
+            } else if (curr_priority == SPORADIC_PRIORITY_PA1) {
+                sporadic_pending_pa1 = sporadic_pa1;
+                sporadic_pa1         = 0;
+            } else if (curr_priority == SPORADIC_PRIORITY_PA4) {
+                sporadic_pending_pa4 = sporadic_pa4;
+                sporadic_pa4         = 0;
             }
             if (curr_priority == SPORADIC_PRIORITY && sporadic_pending != 0) {
                 for (uint8_t i = 0; i < sporadic_pending; i++) {
-                    task(curr_priority, total_sporadic++, 1);
+                    task(curr_priority, SPORADIC_PRIORITY, 1);
                     delay_ms(100);
                 }
                 sporadic_pending = 0;
+            }
+            if (curr_priority == SPORADIC_PRIORITY_PA1 && sporadic_pending_pa1 != 0) {
+                for (uint8_t i = 0; i < sporadic_pending_pa1; i++) {
+                    task(curr_priority, SPORADIC_PRIORITY_PA1, 1);
+                    delay_ms(100);
+                }
+                sporadic_pending_pa1 = 0;
+            }
+            if (curr_priority == SPORADIC_PRIORITY_PA4 && sporadic_pending_pa4 != 0) {
+                for (uint8_t i = 0; i < sporadic_pending_pa4; i++) {
+                    task(curr_priority, SPORADIC_PRIORITY_PA4, 1);
+                    delay_ms(100);
+                }
+                sporadic_pending_pa4 = 0;
             }
             for (uint8_t curr_task = 0; curr_task < TASKS_IN_PRIORITY; curr_task++) {
                 task(curr_priority, index, 0);

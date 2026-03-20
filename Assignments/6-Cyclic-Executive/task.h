@@ -3,6 +3,8 @@
 #include <stdint.h>
 
 extern volatile uint8_t sporadic;
+extern volatile uint8_t sporadic_pa1;
+extern volatile uint8_t sporadic_pa4;
 
 void task_init(void);
 void scheduler(void);
