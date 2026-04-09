@@ -489,6 +489,14 @@ message -> hash -> signed with private key -> verify with public key
 == Type of Learning
 - Instance - only consider current instance/ lazy learning. e.g. KNN
 
+== Min max scalar
+- between -1/0 to 1
+- don't do it when there is outliers with a huge difference
+
+== Logarithmic Scaling
+
+== Robust Scaling
+- (x - median) / IQR
 
 == Standard Scalar
 
@@ -496,4 +504,24 @@ message -> hash -> signed with private key -> verify with public key
 
 - Mostly used Target encoding - average price for a item (may overfit your data)
 
-- Label Encoding should mostly used when data is randomized
+- Label Encoding should mostly used when data is randomized.
+  - Apple - 0
+  - Lenovo - 1
+
+- One Hot Encoding
+
+- Overfitting - memorize
+
+#homework[
+create some kind of small computer game.
+e.g hangman, tictactoe
+]
+
+
+- Object -> no ordering,
+
+- Category -> finite set of category, object will fit into one of them
+
+= Formats
+- Sparse and Dense
+

@@ -4,7 +4,9 @@ import helpers as hp
 import config as cf
 
 root = tk.Tk()
-canvas = tk.Canvas(root, width=cf.WIDTH, height=cf.HEIGHT, bg="black")
+root.title("BREAKOUT")
+root.resizable(False, False)
+canvas = tk.Canvas(root, width=cf.WIDTH, height=cf.HEIGHT, bg=cf.BG_COLOR, highlightthickness=0)
 canvas.pack()
 
 game = Game(root, canvas)

@@ -10,8 +10,14 @@ class Ball:
         self.vx = cf.BALL_VX
         self.vy = cf.BALL_VY
         self.size = cf.BALL_SIZE
+
         self.obj = canvas.create_oval(
-            self.x, self.y, self.x + self.size, self.y + self.size, fill="white"
+            self.x,
+            self.y,
+            self.x + self.size,
+            self.y + self.size,
+            fill=cf.BALL_COLOR,
+            outline="",
         )
 
     def move(self, paddle):
@@ -36,8 +42,6 @@ class Ball:
             self.vy *= -1
         if (self.y - self.size / 2) >= cf.HEIGHT:
             return True
-            # self.y = cf.BALL_Y
-            # pause_game = True
         return False
 
     def draw(self, canvas):
