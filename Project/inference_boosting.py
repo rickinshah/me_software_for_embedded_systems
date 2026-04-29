@@ -4,14 +4,19 @@ inference_boosting.py
 Standalone inference script for the three saved boosting models.
 
 Usage:
-  python inference_boosting.py                   # runs on 10 built-in sample cars
-  python inference_boosting.py --model xgb       # only XGBoost
-  python inference_boosting.py --model lgb       # only LightGBM
-  python inference_boosting.py --model gb        # only Gradient Boosting
-  python inference_boosting.py --csv my_cars.csv # predict from a CSV file
+  python inference_boosting.py                        # 10 random samples (different every run)
+  python inference_boosting.py --n 25                 # 25 random samples
+  python inference_boosting.py --seed 7               # pin seed for reproducibility
+  python inference_boosting.py --model xgb            # only XGBoost
+  python inference_boosting.py --model lgb --n 20     # LightGBM, 20 samples
+  python inference_boosting.py --csv my_cars.csv      # predict from a custom CSV
+
+Note: The seed used is always printed — pass it as --seed <N> to reproduce
+      the exact same sample in a later run.
 
 Requirements:
-  Run  `python save_boosting_models.py`  first to generate the ./models/ folder.
+  • used_cars.csv must be in the current directory (for random sampling)
+  • Run  `python save_boosting_models.py`  first to generate ./models/
 
 Price class bins (same as training):
   Budget    :  < $15,000
@@ -23,6 +28,7 @@ Price class bins (same as training):
 import argparse
 import os
 import sys
+import time
 
 import joblib
 import numpy as np
@@ -30,6 +36,7 @@ import pandas as pd
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 MODEL_DIR = "models"
+DATA_FILE = "used_cars.csv"
 
 # ── Feature lists (must match training exactly) ────────────────────────────────
 NUMERIC_FEATURES = [
@@ -41,7 +48,7 @@ NUMERIC_FEATURES = [
 CATEGORICAL_FEATURES = ["brand", "model", "fuel_type"]
 ALL_FEATURES          = NUMERIC_FEATURES + CATEGORICAL_FEATURES
 
-# ── Price bin boundaries ───────────────────────────────────────────────────────
+# ── Price bin boundaries (must match training) ─────────────────────────────────
 PRICE_BINS   = [0, 15_000, 30_000, 55_000, float("inf")]
 PRICE_LABELS = ["Budget", "Mid-range", "Premium", "Luxury"]
 
@@ -54,7 +61,7 @@ PRICE_RANGES = {
 
 
 def price_to_class(price: float) -> str:
-    """Convert a numeric price to its class label using the training bins."""
+    """Map a numeric price to its class label using the training bins."""
     for i, upper in enumerate(PRICE_BINS[1:]):
         if price < upper:
             return PRICE_LABELS[i]
@@ -62,154 +69,133 @@ def price_to_class(price: float) -> str:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Sample inference data — 10 diverse used cars with ACTUAL listed prices
-#
-# actual_price  = real sale / listing price from the used_cars dataset (or
-#                 realistic market reference for illustrative cars not in CSV)
-# actual_class  = derived from actual_price using the same bins as training
+# Full preprocessing — mirrors save_boosting_models.py exactly
 # ──────────────────────────────────────────────────────────────────────────────
-SAMPLE_CARS_RAW = pd.DataFrame([
+def preprocess_dataset(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Applies all feature-engineering steps to the raw used_cars.csv DataFrame.
+    Returns a DataFrame that contains ALL_FEATURES + 'actual_price' + 'actual_class'.
+    """
+    d = df.copy()
 
-    # ── 1. Budget ─────────────────────────────────────────────────────────────
-    {
-        "brand": "Ford", "model": "Utility Police Interceptor Base",
-        "model_year": 2013, "milage": "51,000 mi.",
-        "fuel_type": "E85 Flex Fuel",
-        "engine": "300.0HP 3.7L V6 Cylinder Engine Flex Fuel Capable",
-        "transmission": "6-Speed A/T",
-        "accident": "At least 1 accident or damage reported", "clean_title": "Yes",
-        # ── ground truth ──────────────────────────────────────────────────────
-        "actual_price": 10_300,   # $10,300  → Budget
-    },
+    # ── Price ─────────────────────────────────────────────────────────────────
+    d["actual_price"] = (
+        d["price"]
+        .str.replace(r"[$,]", "", regex=True)
+        .astype(float)
+    )
 
-    # ── 2. Budget ─────────────────────────────────────────────────────────────
-    {
-        "brand": "Honda", "model": "Civic LX",
-        "model_year": 2015, "milage": "98,000 mi.",
-        "fuel_type": "Gasoline",
-        "engine": "1.8L I4 16V MPFI SOHC",
-        "transmission": "Automatic",
-        "accident": "None reported", "clean_title": "Yes",
-        "actual_price": 9_500,    # $9,500   → Budget
-    },
+    # ── Mileage ───────────────────────────────────────────────────────────────
+    d["mileage_num"] = (
+        d["milage"]
+        .astype(str)
+        .str.replace(",", "", regex=False)
+        .str.extract(r"(\d+)")[0]
+        .astype(float)
+    )
 
-    # ── 3. Mid-range ──────────────────────────────────────────────────────────
-    {
-        "brand": "INFINITI", "model": "Q50 Hybrid Sport",
-        "model_year": 2015, "milage": "88,900 mi.",
-        "fuel_type": "Hybrid",
-        "engine": "354.0HP 3.5L V6 Cylinder Engine Gas/Electric Hybrid",
-        "transmission": "7-Speed A/T",
-        "accident": "None reported", "clean_title": "Yes",
-        "actual_price": 15_500,   # $15,500  → Mid-range
-    },
+    # ── Engine features ───────────────────────────────────────────────────────
+    d["horsepower"]   = d["engine"].str.extract(r"(\d+\.?\d*)HP")[0].astype(float)
+    d["displacement"] = d["engine"].str.extract(r"(\d+\.?\d*)L")[0].astype(float)
+    d["num_cylinders"] = d["engine"].str.extract(r"(\d+)\s*Cylinder")[0].astype(float)
+    d["has_turbo"]    = d["engine"].str.contains("Turbo|Turbocharged", case=False, na=False).astype(int)
+    d["is_electric"]  = d["engine"].str.contains("Electric", case=False, na=False).astype(int)
+    d["hp_per_liter"] = d["horsepower"] / d["displacement"].replace(0, float("nan"))
 
-    # ── 4. Mid-range ──────────────────────────────────────────────────────────
-    {
-        "brand": "Toyota", "model": "Camry XSE",
-        "model_year": 2020, "milage": "28,000 mi.",
-        "fuel_type": "Gasoline",
-        "engine": "203.0HP 2.5L I4 16V GDI DOHC",
-        "transmission": "8-Speed Automatic",
-        "accident": "None reported", "clean_title": "Yes",
-        "actual_price": 25_900,   # $25,900  → Mid-range
-    },
+    # ── Car age ───────────────────────────────────────────────────────────────
+    d["car_age"] = 2025 - d["model_year"]
 
-    # ── 5. Premium ────────────────────────────────────────────────────────────
-    {
-        "brand": "Hyundai", "model": "Palisade SEL",
-        "model_year": 2021, "milage": "34,742 mi.",
-        "fuel_type": "Gasoline",
-        "engine": "3.8L V6 24V GDI DOHC",
-        "transmission": "8-Speed Automatic",
-        "accident": "At least 1 accident or damage reported", "clean_title": "Yes",
-        "actual_price": 38_005,   # $38,005  → Premium
-    },
+    # ── Accident / title ─────────────────────────────────────────────────────
+    d["has_accident"]     = d["accident"].str.contains("accident", case=False, na=False).astype(int)
+    d["clean_title_flag"] = (d["clean_title"] == "Yes").astype(int)
 
-    # ── 6. Premium ────────────────────────────────────────────────────────────
-    {
-        "brand": "Audi", "model": "Q3 45 S line Premium Plus",
-        "model_year": 2021, "milage": "9,835 mi.",
-        "fuel_type": "Gasoline",
-        "engine": "2.0L I4 16V GDI DOHC Turbo",
-        "transmission": "8-Speed Automatic",
-        "accident": "None reported", "clean_title": "Yes",
-        "actual_price": 34_999,   # $34,999  → Premium
-    },
+    # ── Transmission ─────────────────────────────────────────────────────────
+    d["is_automatic"] = (
+        d["transmission"].str.contains("A/T|Automatic|CVT|DCT", case=False, na=False).astype(int)
+    )
+    d["trans_speeds"] = d["transmission"].str.extract(r"(\d+)-Speed")[0].astype(float)
 
-    # ── 7. Premium (boundary — just below Luxury) ─────────────────────────────
-    {
-        "brand": "Lexus", "model": "RX 350 RX 350",
-        "model_year": 2022, "milage": "22,372 mi.",
-        "fuel_type": "Gasoline",
-        "engine": "3.5 Liter DOHC",
-        "transmission": "Automatic",
-        "accident": "None reported", "clean_title": "Yes",
-        "actual_price": 54_598,   # $54,598  → Premium (just under $55k)
-    },
+    # ── Actual class ──────────────────────────────────────────────────────────
+    d["actual_class"] = d["actual_price"].apply(price_to_class)
 
-    # ── 8. Luxury ─────────────────────────────────────────────────────────────
-    {
-        "brand": "Mercedes-Benz", "model": "GLE 450 4MATIC",
-        "model_year": 2023, "milage": "5,200 mi.",
-        "fuel_type": "Gasoline",
-        "engine": "362.0HP 3.0L I6 24V GDI DOHC Turbo",
-        "transmission": "9-Speed Automatic",
-        "accident": "None reported", "clean_title": "Yes",
-        "actual_price": 76_500,   # $76,500  → Luxury
-    },
+    return d
 
-    # ── 9. Luxury ─────────────────────────────────────────────────────────────
-    {
-        "brand": "Porsche", "model": "Cayenne",
-        "model_year": 2022, "milage": "11,000 mi.",
-        "fuel_type": "Gasoline",
-        "engine": "335.0HP 3.0L V6 Cylinder Engine",
-        "transmission": "8-Speed Automatic",
-        "accident": "None reported", "clean_title": "Yes",
-        "actual_price": 82_000,   # $82,000  → Luxury
-    },
 
-    # ── 10. Premium (EV edge-case) ────────────────────────────────────────────
-    {
-        "brand": "Tesla", "model": "Model 3 Long Range",
-        "model_year": 2021, "milage": "18,000 mi.",
-        "fuel_type": "Electric",
-        "engine": "Electric Motor",
-        "transmission": "1-Speed A/T",
-        "accident": "None reported", "clean_title": "Yes",
-        "actual_price": 42_000,   # $42,000  → Premium
-    },
-])
+def load_random_samples(n: int, seed: int | None) -> pd.DataFrame:
+    """
+    Loads used_cars.csv, preprocesses it, drops rows with missing price or
+    target features, then returns n stratified-random rows — one per class
+    where possible, otherwise fully random.
 
-# Derive actual_class from actual_price using the same bins as training
-SAMPLE_CARS_RAW["actual_class"] = SAMPLE_CARS_RAW["actual_price"].apply(price_to_class)
+    If seed is None a random seed is drawn from OS entropy; the seed
+    actually used is always printed so the run can be reproduced.
+    """
+    if not os.path.exists(DATA_FILE):
+        sys.exit(
+            f"\n❌  Dataset not found: {DATA_FILE}\n"
+            "    Make sure used_cars.csv is in the current directory.\n"
+        )
+
+    # Resolve seed: None → fresh OS-entropy seed
+    if seed is None:
+        seed = int.from_bytes(os.urandom(4), "big")
+    print(f"\n📂  Loading dataset from {DATA_FILE} …")
+    print(f"    Random seed       : {seed}  (re-run with --seed {seed} to reproduce)")
+    raw = pd.read_csv(DATA_FILE)
+    print(f"    Total rows in CSV : {len(raw):,}")
+
+    data = preprocess_dataset(raw)
+
+    # Drop rows missing price or key model features
+    required = ALL_FEATURES + ["actual_price", "actual_class"]
+    data = data.dropna(subset=["actual_price"] + ["mileage_num", "horsepower"])
+    data = data[data["actual_price"] > 0]
+
+    print(f"    Usable rows       : {len(data):,}")
+    print(f"    Class distribution:\n{data['actual_class'].value_counts().to_string()}")
+
+    # Stratified sample: try to take ≥1 from each class, fill rest randomly
+    rng     = np.random.default_rng(seed)
+    classes = PRICE_LABELS
+
+    per_class = max(1, n // len(classes))
+    sampled_idx = []
+
+    for cls in classes:
+        cls_idx = data[data["actual_class"] == cls].index.tolist()
+        k = min(per_class, len(cls_idx))
+        sampled_idx.extend(rng.choice(cls_idx, size=k, replace=False).tolist())
+
+    # Fill remaining quota randomly from the rest of the dataset
+    remaining_needed = n - len(sampled_idx)
+    if remaining_needed > 0:
+        leftover = data.index.difference(sampled_idx).tolist()
+        extra = rng.choice(
+            leftover, size=min(remaining_needed, len(leftover)), replace=False
+        )
+        sampled_idx.extend(extra.tolist())
+
+    sample = data.loc[sampled_idx].reset_index(drop=True)
+    print(f"\n🎲  Randomly sampled {len(sample)} rows.")
+    return sample
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Feature engineering  (raw CSV row → model-ready row)
+# Feature engineering for custom CSV (no price column)
 # ──────────────────────────────────────────────────────────────────────────────
 def engineer_features(raw: pd.DataFrame) -> pd.DataFrame:
-    """
-    Converts a raw-data DataFrame (original CSV columns) into the engineered
-    feature DataFrame expected by the sklearn Pipelines.
-    """
+    """Convert a raw-column DataFrame to the engineered feature DataFrame."""
     if set(ALL_FEATURES).issubset(raw.columns):
         return raw[ALL_FEATURES].copy()
 
     d = raw.copy()
 
-    # mileage
     if "mileage_num" not in d.columns:
         d["mileage_num"] = (
-            d["milage"]
-            .astype(str)
+            d["milage"].astype(str)
             .str.replace(",", "", regex=False)
-            .str.extract(r"(\d+)")[0]
-            .astype(float)
+            .str.extract(r"(\d+)")[0].astype(float)
         )
-
-    # engine-derived features
     if "horsepower" not in d.columns:
         d["horsepower"] = d["engine"].str.extract(r"(\d+\.?\d*)HP")[0].astype(float)
     if "displacement" not in d.columns:
@@ -217,39 +203,23 @@ def engineer_features(raw: pd.DataFrame) -> pd.DataFrame:
     if "num_cylinders" not in d.columns:
         d["num_cylinders"] = d["engine"].str.extract(r"(\d+)\s*Cylinder")[0].astype(float)
     if "has_turbo" not in d.columns:
-        d["has_turbo"] = (
-            d["engine"].str.contains("Turbo|Turbocharged", case=False, na=False).astype(int)
-        )
+        d["has_turbo"] = d["engine"].str.contains("Turbo|Turbocharged", case=False, na=False).astype(int)
     if "is_electric" not in d.columns:
-        d["is_electric"] = (
-            d["engine"].str.contains("Electric", case=False, na=False).astype(int)
-        )
+        d["is_electric"] = d["engine"].str.contains("Electric", case=False, na=False).astype(int)
     if "hp_per_liter" not in d.columns:
         d["hp_per_liter"] = d["horsepower"] / d["displacement"].replace(0, float("nan"))
-
-    # age
     if "car_age" not in d.columns:
         d["car_age"] = 2025 - d["model_year"].astype(int)
-
-    # accident / title
     if "has_accident" not in d.columns:
-        d["has_accident"] = (
-            d["accident"].str.contains("accident", case=False, na=False).astype(int)
-        )
+        d["has_accident"] = d["accident"].str.contains("accident", case=False, na=False).astype(int)
     if "clean_title_flag" not in d.columns:
         d["clean_title_flag"] = (d["clean_title"] == "Yes").astype(int)
-
-    # transmission
     if "is_automatic" not in d.columns:
         d["is_automatic"] = (
-            d["transmission"]
-            .str.contains("A/T|Automatic|CVT|DCT", case=False, na=False)
-            .astype(int)
+            d["transmission"].str.contains("A/T|Automatic|CVT|DCT", case=False, na=False).astype(int)
         )
     if "trans_speeds" not in d.columns:
-        d["trans_speeds"] = (
-            d["transmission"].str.extract(r"(\d+)-Speed")[0].astype(float)
-        )
+        d["trans_speeds"] = d["transmission"].str.extract(r"(\d+)-Speed")[0].astype(float)
 
     return d[ALL_FEATURES].copy()
 
@@ -282,62 +252,73 @@ def load_models(model_choice: str):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Run predictions for all selected models
+# Run predictions
 # ──────────────────────────────────────────────────────────────────────────────
-def predict(X: pd.DataFrame, pipelines, le, class_names) -> pd.DataFrame:
-    results = []
+def predict(X: pd.DataFrame, pipelines, le, class_names):
+    """
+    Returns (results_df, infer_times) where infer_times is a dict
+    mapping model_name -> seconds taken for predict_proba + predict.
+    """
+    results     = []
+    infer_times = {}
 
     for model_name, (pipeline, use_encoded) in pipelines.items():
-        proba = pipeline.predict_proba(X)           # shape: (n_samples, n_classes)
-
+        t0    = time.perf_counter()
+        proba = pipeline.predict_proba(X)
         if use_encoded:
-            enc_preds = pipeline.predict(X)
-            str_preds = le.inverse_transform(enc_preds)
+            str_preds = le.inverse_transform(pipeline.predict(X))
         else:
             str_preds = pipeline.predict(X)
+        infer_times[model_name] = time.perf_counter() - t0
 
         for i, (pred, prob_row) in enumerate(zip(str_preds, proba)):
-            conf = prob_row.max() * 100
             prob_dict = {f"P({c})": f"{p:.1%}" for c, p in zip(class_names, prob_row)}
             results.append({
                 "sample"     : i + 1,
                 "model"      : model_name,
                 "prediction" : pred,
-                "confidence" : f"{conf:.1f}%",
+                "confidence" : f"{prob_row.max() * 100:.1f}%",
                 **prob_dict,
             })
 
-    return pd.DataFrame(results)
+    return pd.DataFrame(results), infer_times
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Pretty-print helpers
+# Helpers
 # ──────────────────────────────────────────────────────────────────────────────
 def fmt_price(p: float) -> str:
     return f"${p:,.0f}"
 
-
 def fmt_correct(pred: str, actual: str) -> str:
-    return "✅" if pred == actual else "❌"
+    return "Yes" if pred == actual else "No"
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# CLI entry-point
+# CLI
 # ──────────────────────────────────────────────────────────────────────────────
 def main():
     parser = argparse.ArgumentParser(
-        description="Run inference with the saved boosting models on used-car price classification."
+        description="Inference with saved boosting models on used-car price classification."
     )
     parser.add_argument(
         "--model", choices=["xgb", "lgb", "gb", "all"], default="all",
-        help="Which model(s) to use  (default: all three)."
+        help="Which model(s) to run  (default: all)."
+    )
+    parser.add_argument(
+        "--n", type=int, default=10,
+        help="Number of random samples to draw from used_cars.csv  (default: 10)."
+    )
+    parser.add_argument(
+        "--seed", type=int, default=None,
+        help="Pin the random seed for reproducibility. Omit for a different sample every run."
     )
     parser.add_argument(
         "--csv", default=None,
         help=(
-            "Path to a CSV with raw car columns (same schema as used_cars.csv). "
-            "Add an 'actual_price' column to enable accuracy reporting. "
-            "Omit to use the 10 built-in sample cars."
+            "Path to a custom CSV (same schema as used_cars.csv). "
+            "Add an 'actual_price' column to get accuracy reporting. "
+            "If omitted, random samples are drawn from used_cars.csv."
         ),
     )
     args = parser.parse_args()
@@ -349,6 +330,7 @@ def main():
 
     # ── Prepare input data ───────────────────────────────────────────────────
     has_actuals = False
+
     if args.csv:
         if not os.path.exists(args.csv):
             sys.exit(f"❌  CSV not found: {args.csv}")
@@ -357,27 +339,27 @@ def main():
         if "actual_price" in raw.columns:
             raw["actual_class"] = raw["actual_price"].apply(price_to_class)
             has_actuals = True
+        X = engineer_features(raw)
     else:
-        raw = SAMPLE_CARS_RAW.copy()
+        # ── Random samples from used_cars.csv ─────────────────────────────
+        sample_df = load_random_samples(n=args.n, seed=args.seed)
+        X         = sample_df[ALL_FEATURES].copy()
+        raw       = sample_df          # carries actual_price + actual_class
         has_actuals = True
-        print(f"\n🚗  Using {len(raw)} built-in sample cars (actual prices included).")
 
-    # ── Engineer features ────────────────────────────────────────────────────
-    X = engineer_features(raw)
-
-    # ── Predict ──────────────────────────────────────────────────────────────
+    # ── Run inference ────────────────────────────────────────────────────────
     print("\n⚙️   Running inference …\n")
-    results = predict(X, pipelines, le, class_names)
+    results, infer_times = predict(X, pipelines, le, class_names)
 
-    # Attach readable car label
+    # Readable car label
     if "brand" in raw.columns and "model" in raw.columns:
-        car_labels = (raw["brand"] + " " + raw["model"].str[:28]).tolist()
+        car_labels = (raw["brand"] + " " + raw["model"].str[:26]).tolist()
     else:
         car_labels = [f"Car {i + 1}" for i in range(len(raw))]
 
     results.insert(1, "car", results["sample"].apply(lambda s: car_labels[s - 1]))
 
-    # Attach actual price / class if available
+    # Attach actuals
     if has_actuals:
         actual_prices  = raw["actual_price"].tolist()
         actual_classes = raw["actual_class"].tolist()
@@ -388,47 +370,41 @@ def main():
         )
 
     pd.set_option("display.max_columns", None)
-    pd.set_option("display.width", 180)
+    pd.set_option("display.width", 200)
     pd.set_option("display.max_colwidth", 30)
 
     model_names = results["model"].unique()
 
-    # ── Per-model detailed table ─────────────────────────────────────────────
+    # ── Per-model table ──────────────────────────────────────────────────────
     for mname in model_names:
         sub = results[results["model"] == mname].copy()
-        print("=" * 90)
+        print("=" * 100)
         print(f"  MODEL : {mname}")
-        print("=" * 90)
+        print("=" * 100)
 
+        display_cols = ["sample", "car"]
         if has_actuals:
-            display_cols = (
-                ["sample", "car", "actual_price", "actual_class",
-                 "prediction", "confidence", "correct?"]
-                + [c for c in sub.columns if c.startswith("P(")]
-            )
-        else:
-            display_cols = (
-                ["sample", "car", "prediction", "confidence"]
-                + [c for c in sub.columns if c.startswith("P(")]
-            )
+            display_cols += ["actual_price", "actual_class"]
+        display_cols += ["prediction", "confidence"]
+        if has_actuals:
+            display_cols += ["correct?"]
+        display_cols += [c for c in sub.columns if c.startswith("P(")]
 
         print(sub[display_cols].to_string(index=False))
 
         if has_actuals:
-            n_correct = (sub["correct?"] == "✅").sum()
+            n_correct = (sub["correct?"] == "Yes").sum()
             n_total   = len(sub)
-            acc_pct   = n_correct / n_total * 100
-            print(f"\n  Sample accuracy: {n_correct}/{n_total} ({acc_pct:.0f}%)\n")
-        else:
-            print()
+            print(f"\n  Sample accuracy : {n_correct}/{n_total}  ({n_correct / n_total * 100:.0f}%)")
+        print()
 
-    # ── Side-by-side summary across models ───────────────────────────────────
+    # ── Side-by-side summary ─────────────────────────────────────────────────
     if len(model_names) > 1:
-        print("=" * 90)
-        print("  SIDE-BY-SIDE SUMMARY  (prediction per model)")
-        print("=" * 90)
+        print("=" * 100)
+        print("  SIDE-BY-SIDE SUMMARY")
+        print("=" * 100)
 
-        idx_cols  = ["sample", "car"]
+        idx_cols = ["sample", "car"]
         if has_actuals:
             idx_cols += ["actual_price", "actual_class"]
 
@@ -443,22 +419,41 @@ def main():
         if has_actuals:
             for mname in model_names:
                 pivot[f"{mname} ✓?"] = pivot.apply(
-                    lambda r: fmt_correct(r[mname], r["actual_class"]), axis=1
+                    lambda r, m=mname: fmt_correct(r[m], r["actual_class"]), axis=1
                 )
 
         print(pivot.to_string(index=False))
         print()
 
         if has_actuals:
-            print("─" * 90)
+            print("─" * 100)
             print("  ACCURACY PER MODEL (on this sample):")
             for mname in model_names:
-                n_correct = (pivot[f"{mname} ✓?"] == "✅").sum()
+                n_correct = (pivot[f"{mname} ✓?"] == "Yes").sum()
                 n_total   = len(pivot)
-                print(f"  {mname:<22}: {n_correct}/{n_total}  ({n_correct/n_total*100:.0f}%)")
+                print(f"  {mname:<22} : {n_correct}/{n_total}  ({n_correct / n_total * 100:.0f}%)")
             print()
 
-    print("✅  Inference complete!\n")
+    print("\n✅  Inference complete!")
+
+    # ── Inference time summary ───────────────────────────────────────────────
+    n_samples = len(X)
+    print()
+    print("=" * 55)
+    print("  ⏱  INFERENCE TIME SUMMARY")
+    print("=" * 55)
+    print(f"  {'Model':<22}  {'Total':>8}  {'Per sample':>12}")
+    print("-" * 55)
+    total_infer = 0.0
+    for mname, secs in infer_times.items():
+        per_sample_ms = secs / n_samples * 1000
+        print(f"  {mname:<22}  {secs:>7.3f}s  {per_sample_ms:>10.3f}ms")
+        total_infer += secs
+    print("-" * 55)
+    per_sample_ms_total = total_infer / n_samples * 1000
+    print(f"  {'Total (all models)':<22}  {total_infer:>7.3f}s  {per_sample_ms_total:>10.3f}ms")
+    print("=" * 55)
+    print()
 
 
 if __name__ == "__main__":

@@ -19,6 +19,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import os
+import time
 import pandas as pd
 import numpy as np
 import joblib
@@ -139,6 +140,9 @@ y_train_enc = le.fit_transform(y_train)
 print("\nLabel mapping:", dict(zip(le.classes_, le.transform(le.classes_))))
 
 # ── 5. Train models ────────────────────────────────────────────────────────────
+train_times = {}
+total_start = time.perf_counter()
+
 print("\n[1/3] Training XGBoost …")
 xgb_pipeline = Pipeline(steps=[
     ("preprocessor", preprocessor),
@@ -157,8 +161,10 @@ xgb_pipeline = Pipeline(steps=[
         n_jobs             = -1,
     )),
 ])
+t0 = time.perf_counter()
 xgb_pipeline.fit(X_train, y_train_enc)
-print("   XGBoost trained ✓")
+train_times["XGBoost"] = time.perf_counter() - t0
+print(f"   XGBoost trained ✓  ({train_times['XGBoost']:.2f}s)")
 
 print("[2/3] Training LightGBM …")
 lgb_pipeline = Pipeline(steps=[
@@ -178,8 +184,10 @@ lgb_pipeline = Pipeline(steps=[
         verbose          = -1,
     )),
 ])
+t0 = time.perf_counter()
 lgb_pipeline.fit(X_train, y_train_enc)
-print("   LightGBM trained ✓")
+train_times["LightGBM"] = time.perf_counter() - t0
+print(f"   LightGBM trained ✓  ({train_times['LightGBM']:.2f}s)")
 
 print("[3/3] Training Gradient Boosting (sklearn) …")
 gb_pipeline = Pipeline(steps=[
@@ -193,8 +201,12 @@ gb_pipeline = Pipeline(steps=[
         random_state  = SEED,
     )),
 ])
+t0 = time.perf_counter()
 gb_pipeline.fit(X_train, y_train)   # sklearn GBC accepts string labels
-print("   Gradient Boosting trained ✓")
+train_times["GradientBoosting"] = time.perf_counter() - t0
+print(f"   Gradient Boosting trained ✓  ({train_times['GradientBoosting']:.2f}s)")
+
+total_train_time = time.perf_counter() - total_start
 
 # ── 6. Save artefacts ──────────────────────────────────────────────────────────
 print("\nSaving artefacts to ./models/ …")
@@ -210,5 +222,15 @@ for f in ["xgb_pipeline.joblib", "lgb_pipeline.joblib",
     path = os.path.join(MODEL_DIR, f)
     size = os.path.getsize(path) / 1024
     print(f"  {path}  ({size:.1f} KB)")
+
+# ── 7. Training time summary ───────────────────────────────────────────────────
+print("\n" + "=" * 45)
+print("  ⏱  TRAINING TIME SUMMARY")
+print("=" * 45)
+for model_name, secs in train_times.items():
+    print(f"  {model_name:<22} : {secs:>7.2f}s")
+print("-" * 45)
+print(f"  {'Total (all 3 models)':<22} : {total_train_time:>7.2f}s")
+print("=" * 45)
 
 print("\n✅ All boosting models saved successfully!")
