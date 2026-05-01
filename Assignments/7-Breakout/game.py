@@ -51,12 +51,6 @@ class Game:
             font=("Courier", 22, "bold"),
         )
 
-    # def _draw_background(self):
-    #     for x in range(0, cf.WIDTH, 60):
-    #         self.canvas.create_line(x, 0, x, cf.HEIGHT, fill="#111122", width=1)
-    #     for y in range(0, cf.HEIGHT, 60):
-    #         self.canvas.create_line(0, y, cf.WIDTH, y, fill="#111122", width=1)
-
     def update(self):
         missed = self.ball.move(self.paddle)
         if missed:
